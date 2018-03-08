@@ -1,6 +1,10 @@
 # Python 3.5.2 Anaconda
 
-class InformationRetreival(object):
+import numpy as np
+from os.path import join
+
+
+class InformationRetrieval(object):
     def __init__(self):
         import os
         from os.path import expanduser
@@ -102,16 +106,16 @@ class InformationRetreival(object):
 
         if type == 'bmode':
             source_dir = os.path.join(self.prototype, 'bmode_frames')
-            test_oneg = os.path.join(self.prototype, 'bmode_retreival/test/negative')
-            test_opos = os.path.join(self.prototype, 'bmode_retreival/test/positive')
-            train_oneg = os.path.join(self.prototype, 'bmode_retreival/train/negative')
-            train_opos = os.path.join(self.prototype, 'bmode_retreival/train/positive')
+            test_oneg = os.path.join(self.prototype, 'bmode_retrieval/test/negative')
+            test_opos = os.path.join(self.prototype, 'bmode_retrieval/test/positive')
+            train_oneg = os.path.join(self.prototype, 'bmode_retrieval/train/negative')
+            train_opos = os.path.join(self.prototype, 'bmode_retrieval/train/positive')
         else:
             source_dir = os.path.join(self.prototype, 'mmode_images')
-            test_oneg = os.path.join(self.prototype, 'mmode_retreival/test/negative')
-            test_opos = os.path.join(self.prototype, 'mmode_retreival/test/positive')
-            train_oneg = os.path.join(self.prototype, 'mmode_retreival/train/negative')
-            train_opos = os.path.join(self.prototype, 'mmode_retreival/train/positive')
+            test_oneg = os.path.join(self.prototype, 'mmode_retrieval/test/negative')
+            test_opos = os.path.join(self.prototype, 'mmode_retrieval/test/positive')
+            train_oneg = os.path.join(self.prototype, 'mmode_retrieval/train/negative')
+            train_opos = os.path.join(self.prototype, 'mmode_retrieval/train/positive')
 
         # Recursively create directories if they don't exist
         if not os.path.isdir(test_oneg):
@@ -212,9 +216,412 @@ class InformationRetreival(object):
         print('train set negative = ' + str(train_count - pos_count) + ' images')  # Floor division by default
 
 
-class PreProcess(object):
+class Preprocessing:
+
     def __init__(self):
-        self.directory = 'Import Class Directory'
+        from os import getcwd
+        from os.path import join
+
+        self.PathHome = getcwd()
+        self.Mode = 'mmode'
+        self.PathData = join(self.PathHome, self.Mode + '_retrieval')
+        self.ImgDirs = []
+        self.set_image_dirs()
+        self.SavePath = join(self.PathHome, 'processed')
+        self.GrayImage = np.zeros((1, 1))
+        self.CleanedImage = np.zeros((1, 1))
+
+    def set_path_home(self, path):
+        self.PathHome = path
+        self.set_image_dirs()
+        self.SavePath = join(self.PathHome, 'processed')
+
+    def set_mode(self, mode):
+        self.Mode = mode
+        self.set_image_dirs()
+
+    def set_save_path(self, savename):
+        self.SavePath = savename
+
+    def set_image_dirs(self):
+        self.ImgDirs = [join(self.PathData, 'train/negative'), join(self.PathData, 'train/positive'),
+                        join(self.PathData, 'test/negative'), join(self.PathData, 'test/positive')]
+
+    def remove_background(self):
+        from skimage import morphology, exposure, measure
+
+        img = self.GrayImage
+        img -= np.min(img)
+        img /= np.max(img)
+
+        # Use histogram of histogram equalized image to find threshold
+        equ = exposure.equalize_hist(img, 256)
+
+        hist, bins = exposure.histogram(equ, 256)
+        h_thresh_idx = np.argmax(hist)
+        thresh = bins[h_thresh_idx + 2]
+        bw = equ > thresh
+        fctr = 0.85
+        d0_thr = img.shape[0] * fctr
+        d1_thr = img.shape[1] * fctr
+
+        # If an object is too large, increase the threshold to avoid filtering nothing out.
+        thr_bad = True
+        while thr_bad:
+            thresh = bins[h_thresh_idx]
+            bw = equ > thresh
+            lb_img = measure.label(bw, neighbors=4)
+            prps = measure.regionprops(lb_img)
+            thr_ok = True
+            for p in prps:
+                cds = np.transpose(p.coords)
+                if (np.max(cds[0]) - np.min(cds[0])) > d0_thr or (np.max(cds[1]) - np.min(cds[1])) > d1_thr:
+                    thr_ok = False
+                    h_thresh_idx += 1
+                    break
+            if thr_ok:
+                thr_bad = False
+
+        # Label the distinct objects in the thresholded image
+        lb_img = measure.label(bw, neighbors=4)
+
+        # Find region properties to determine the size of each object
+        prps = measure.regionprops(lb_img)
+
+        # Create a binary image indicating which objects should remain in the image based on size
+        keep_cds = np.zeros([img.shape[0], img.shape[1]])
+
+        # Filter out objects that are small.
+        thresh2 = img.shape[0] * img.shape[1] / 20
+        for p in prps:
+            if p.area > thresh2:
+                cds = np.transpose(p.coords)
+                keep_cds[cds[0], cds[1]] = 1
+
+        # Use the binary image to create the new cleaned image
+        bw = morphology.binary_opening(keep_cds, morphology.square(3))
+        bw = morphology.binary_closing(bw, morphology.square(5))
+
+        idxs = np.where(bw > 0)
+
+        new_img = np.zeros([img.shape[0], img.shape[1]])
+        new_img[idxs[0], idxs[1]] = img[idxs[0], idxs[1]]
+
+        self.CleanedImage = new_img
+
+    def get_vert_lines(self, sz_filt):
+        from skimage import filters, morphology
+
+        img = self.CleanedImage
+
+        img -= np.min(img)
+        img /= np.max(img)
+
+        # Smooth image
+        img = filters.median(img, morphology.disk(sz_filt))
+
+        # Use vertical Sobel filter (since we know the lines are always the same orientation)
+        sb = filters.sobel_v(img)
+
+        # Normalize data between 0 and 1
+        sb -= np.min(sb)
+        sb /= np.max(sb)
+
+        # Find Otsu threshold
+        thr = filters.threshold_otsu(sb)
+
+        thr_img = np.zeros([sb.shape[0], sb.shape[1]])
+        thr_idx = np.where(sb < thr)
+        thr_img[thr_idx[0], thr_idx[1]] = 1
+        thr_img = thr_img > 0
+        if np.sum(thr_img) > np.sum(~thr_img):
+            thr_img = ~thr_img
+
+        return thr_img
+
+    def detect_lines(self):
+
+        img = self.CleanedImage
+        img -= np.min(img)
+        img /= np.max(img)
+
+        sz_filt = 1
+
+        # Get vertical lines using sobel_v filter.
+        thr_img = self.get_vert_lines(sz_filt)
+
+        # If there's a huge number of lines found, use a larger filter to smooth the image and find lines again.
+        n_col_lines = np.sum(np.sum(thr_img, axis=0) > 0)
+        while n_col_lines > img.shape[1] / 2:
+            thr_img = self.get_vert_lines(sz_filt)
+            sz_filt += 2
+            n_col_lines = np.sum(np.sum(thr_img, axis=0) > 0)
+
+        return thr_img
+
+    def crop_image(self):
+        from skimage import measure
+
+        # Crop image to indices of nonzero values and the width of the largest region.
+        img = self.CleanedImage
+        img -= np.min(img)
+        img /= np.max(img)
+        idx = np.where(img > 0)
+
+        mask = img > 0
+        pix_per_col = np.sum(mask, axis=0)
+
+        n_pix_thr = np.floor(mask.shape[0] / 50)
+
+        ln_cols = np.where(pix_per_col < n_pix_thr)
+        ln_cols = ln_cols[0]
+
+        for l in ln_cols:
+            mask[:, l] = 0
+
+        lb_img = measure.label(mask, neighbors=4)
+        prps = measure.regionprops(lb_img)
+
+        mx = 0
+        mx_idx = 0
+        for i in range(len(prps)):
+            p = prps[i]
+            if p.area > mx:
+                mx = p.area
+                mx_idx = i
+
+        cds = np.transpose(prps[mx_idx].coords)
+
+        min_c = np.min(cds[1])
+        max_c = np.max(cds[1])
+        min_r = np.min(idx[0])
+        max_r = np.max(idx[0])
+
+        crpd_img = img[min_r:max_r - 1, min_c:max_c - 1]
+
+        return crpd_img
+
+    def blend_lines_into_image(self, thr_img):
+        from skimage import filters, measure
+
+        img = self.CleanedImage
+
+        # Normalize image
+        base_img = img - np.min(img)
+        base_img /= np.max(base_img)
+
+        # This is to avoid having many small line segments. If there are enough line pixels present in a column,
+        # the line is extended between the min and max rows, so we just have to deal with one line per column.
+        pix_per_col = np.sum(thr_img, axis=0)
+
+        n_pix_thr = np.floor(thr_img.shape[0] / 15)
+
+        ln_cols = np.where(pix_per_col > n_pix_thr)
+        ln_cols = ln_cols[0]
+
+        for l in ln_cols:
+            idx = np.where(thr_img[:, l] > 0)
+            idx = idx[0]
+            mx = np.max(idx)
+            mn = np.min(idx)
+            thr_img[mn:mx, l] = 1
+
+        #thr_img = thr_img.astype('int')
+
+        lb_img = measure.label(thr_img, neighbors=4)
+        prps = measure.regionprops(lb_img)
+
+        # Threshold used to get rid of extraneous spots/short lines
+        thresh = img.shape[0] * img.shape[1] / 10000
+        for p in prps:
+            cds = np.transpose(p.coords)
+            # If any of the object is outside the designated region, remove it from the labeled image.
+            if p.area < thresh:
+                lb_img[cds[0], cds[1]] = 0
+
+        # Blend lines
+        final_img = np.copy(base_img)
+
+        # For each line, fill with neighboring pixel values and filter to obtain final line pixel values.
+        prps = measure.regionprops(lb_img)
+        for p in prps:
+            obj_img = np.zeros([lb_img.shape[0], lb_img.shape[1]])
+            cds = np.transpose(p.coords)
+            obj_img[cds[0], cds[1]] = 1
+
+            bw = obj_img > 0
+            final_idx = np.where(bw)
+            final_min_c = np.min(final_idx[1])
+            final_max_c = np.max(final_idx[1])
+
+            bw_idx = np.where(obj_img > 0)
+
+            min_c = np.min(bw_idx[1])
+            max_c = np.max(bw_idx[1])
+            min_r = np.min(bw_idx[0])
+            max_r = np.max(bw_idx[0])
+
+            init_img = np.multiply(base_img, ~bw)
+
+            # Fill in line with values from neighboring pixels.
+            tmp_bfr = 1
+            st_idx = np.max([min_c - tmp_bfr - 1, 0])
+            fn_idx = np.min([max_c + tmp_bfr + 2, init_img.shape[1]])
+
+            rt_idx = 0
+            for i in range(st_idx - tmp_bfr, st_idx + np.round((fn_idx - st_idx) / 2)):
+                # Add a little noise to help blending
+                ns_i = (np.random.randn(max_r + 2 - min_r) - 0.0) / 50
+                ns_fn_i = (np.random.randn(max_r + 2 - min_r) - 0.0) / 50
+                inp_i = init_img[min_r:max_r + 2, i - 1]
+                inp_fn_i = init_img[min_r:max_r + 2, np.min((fn_idx - rt_idx + 1, init_img.shape[1] - 1))]
+                init_img[min_r:max_r + 2, i] = inp_i + ns_i
+                init_img[min_r:max_r + 2, fn_idx + 0 - rt_idx] = inp_fn_i + ns_fn_i
+                rt_idx += 1
+
+            # Cap values between 0 and 1. (This is an effect of the noise.)
+            init_img[init_img < 0] = 0
+            init_img[init_img > 1] = 1
+
+            # Smooth image to get line values
+            bfr = 1
+            tmp_img = filters.gaussian(init_img, sigma=0.1)
+
+            min_c = np.max([final_min_c - bfr - 1, 0])
+            max_c = np.min([final_max_c + bfr + 2, init_img.shape[1]])
+            min_r = np.max([min_r, 0])
+            max_r = np.min([max_r + 1, init_img.shape[0]])
+
+            final_img = (final_img - np.min(final_img)) / (np.max(final_img) - np.min(final_img))
+            base_img = (base_img - np.min(base_img)) / (np.max(base_img) - np.min(base_img))
+            for i in range(min_c, max_c + 1):
+                final_img[min_r:max_r, i] = tmp_img[min_r:max_r, i]
+                base_img[min_r:max_r, i] = tmp_img[min_r:max_r, i]
+            final_img[final_img > 1] = 1
+            final_img[final_img < 0] = 0.1
+            base_img[base_img > 1] = 1
+            base_img[base_img < 0] = 0.1
+
+        self.CleanedImage = final_img
+
+        # Crop image.
+        crpd_final_img = self.crop_image()
+
+        return crpd_final_img
+
+    def remove_text(self):
+        from skimage import morphology, measure, feature
+
+        cleaned_img = self.CleanedImage
+
+        # Find local maxima
+        img = feature.peak_local_max(cleaned_img, indices=False)
+        lb_img = measure.label(img, neighbors=8)
+        prps = measure.regionprops(lb_img)
+        nb_pixels = 50
+        rg_area = 10
+        n_img = np.zeros((img.shape[0], img.shape[1]))
+        # If a nonzero region is larger than a specified area and is near the edges of the image, keep it.
+        for p in prps:
+            cds = np.transpose(p.coords)
+            if p.area > rg_area and (np.max(cds[0]) < nb_pixels or np.min(cds[0]) > img.shape[0] - nb_pixels) and (
+                    np.max(cds[1]) < nb_pixels or np.min(cds[1]) > img.shape[1] - nb_pixels):
+                n_img[cds[0], cds[1]] = 1
+
+        # Dilate to ensure coverage of entire character
+        b_img = morphology.binary_dilation(n_img, morphology.square(15))
+
+        cleaned_img2 = np.copy(cleaned_img)
+        lb_img = measure.label(b_img)
+        prps = measure.regionprops(lb_img)
+
+        # Replace pixels with neighboring values.
+        thr = np.round(nb_pixels / 2)
+        for p in prps:
+            idx = np.transpose(p.coords)
+            if len(idx[0]) > 0:
+                if img.shape[1] - np.max(idx[1]) < thr:
+                    max_c = img.shape[1]
+                else:
+                    max_c = np.max(idx[1])
+                if np.min(idx[1]) < thr:
+                    min_c = 1
+                else:
+                    min_c = np.min(idx[1])
+
+                if img.shape[0] - np.max(idx[0]) < thr:
+                    max_r = img.shape[0]
+                else:
+                    max_r = np.max(idx[0])
+                if np.min(idx[0]) < thr:
+                    min_r = 1
+                else:
+                    min_r = np.min(idx[0])
+
+                width = max_c - min_c
+                if np.min(idx[1]) > width:
+                    cleaned_img2[min_r:max_r, min_c:max_c] = cleaned_img2[min_r:max_r, min_c - width:min_c]
+                elif np.max(idx[1]) < (img.shape[1] - width):
+                    cleaned_img2[min_r:max_r, min_c:max_c] = cleaned_img2[min_r:max_r, max_c:max_c + width]
+
+        self.CleanedImage = cleaned_img2
+
+    def clean_images(self):
+        import time
+        from os.path import isdir, join
+        from os import mkdir, listdir
+        import imageio
+        from skimage.color import rgb2gray
+
+        st_time = time.clock()
+
+        # Run through thr image folders and clean images.
+        n_imgs = 10000
+        img_idx = 0
+
+        save_dir = self.SavePath
+
+        for dr in self.ImgDirs:
+            tmp = dr.split('/')
+
+            save_img_dir = join(save_dir, tmp[len(tmp) - 3], tmp[len(tmp) - 2], tmp[len(tmp) - 1])
+            tmp_dir = save_dir
+            for i in range(3, 0, -1):
+                if not isdir(tmp_dir):
+                    mkdir(tmp_dir)
+                tmp_dir = join(tmp_dir, tmp[len(tmp) - i])
+            if not isdir(tmp_dir):
+                mkdir(tmp_dir)
+            list_imgs = listdir(dr)
+            for name_img in list_imgs:
+                # Checking filepaths
+                if img_idx < n_imgs:
+                    if '.bmp' not in name_img:
+                        print(name_img)
+                        continue
+                    path_img = join(dr, name_img)
+                    c_img = imageio.imread(path_img)
+                    img = rgb2gray(c_img)
+
+
+                    self.GrayImage = img
+
+                    self.remove_background()
+                    thr_img = self.detect_lines()
+                    cleaned_img = self.blend_lines_into_image(thr_img)
+                    cleaned_img -= np.min(cleaned_img)
+                    cleaned_img /= np.max(cleaned_img)
+
+                    crpd_final_img = join(save_img_dir, name_img)
+                    self.CleanedImage = cleaned_img
+                    self.remove_text()
+
+                    imageio.imwrite(crpd_final_img[0:len(crpd_final_img) - 4] + '.png', self.CleanedImage)
+                    img_idx += 1
+
+        end_time = time.clock()
+
+        print('time:', end_time - st_time)
 
 
 class DataAugmentation(object):
@@ -257,15 +664,15 @@ class DataAugmentation(object):
             train_dest_pos = os.path.join(self.prototype, 'model/bmode/train/positive')
             val_dest_neg = os.path.join(self.prototype, 'model/bmode/val/negative')
             val_dest_pos = os.path.join(self.prototype, 'model/bmode/val/positive')
-            source_neg = os.path.join(self.prototype, 'bmode_retreival/train/negative')
-            source_pos = os.path.join(self.prototype, 'bmode_retreival/train/positive')
+            source_neg = os.path.join(self.prototype, 'bmode_retrieval/train/negative')
+            source_pos = os.path.join(self.prototype, 'bmode_retrieval/train/positive')
         else:
             train_dest_neg = os.path.join(self.prototype, 'model/mmode/train/negative')
             train_dest_pos = os.path.join(self.prototype, 'model/mmode/train/positive')
             val_dest_neg = os.path.join(self.prototype, 'model/mmode/val/negative')
             val_dest_pos = os.path.join(self.prototype, 'model/mmode/val/positive')
-            source_neg = os.path.join(self.prototype, 'mmode_retreival/train/negative')
-            source_pos = os.path.join(self.prototype, 'mmode_retreival/train/positive')
+            source_neg = os.path.join(self.prototype, 'mmode_retrieval/train/negative')
+            source_pos = os.path.join(self.prototype, 'mmode_retrieval/train/positive')
 
         # Recursively create destination directories if they don't exist
         if not os.path.isdir(train_dest_neg):
@@ -321,18 +728,18 @@ class DataAugmentation(object):
         import os
 
         if type == 'bmode':
-            clahe_neg = os.path.join(self.prototype, 'bmode_retreival/clahe_negative')
-            clahe_pos = os.path.join(self.prototype, 'bmode_retreival/clahe_positive')
-            train_neg = os.path.join(self.prototype, 'bmode_retreival/train/negative')
-            train_pos = os.path.join(self.prototype, 'bmode_retreival/train/positive')
+            clahe_neg = os.path.join(self.prototype, 'bmode_retrieval/clahe_negative')
+            clahe_pos = os.path.join(self.prototype, 'bmode_retrieval/clahe_positive')
+            train_neg = os.path.join(self.prototype, 'bmode_retrieval/train/negative')
+            train_pos = os.path.join(self.prototype, 'bmode_retrieval/train/positive')
             self.train_bmode_neg = train_neg
             self.train_bmode_pos = train_pos
 
         else:
-            clahe_neg = os.path.join(self.prototype, 'mmode_retreival/clahe_negative')
-            clahe_pos = os.path.join(self.prototype, 'mmode_retreival/clahe_positive')
-            train_neg = os.path.join(self.prototype, 'mmode_retreival/train/negative')
-            train_pos = os.path.join(self.prototype, 'mmode_retreival/train/positive')
+            clahe_neg = os.path.join(self.prototype, 'mmode_retrieval/clahe_negative')
+            clahe_pos = os.path.join(self.prototype, 'mmode_retrieval/clahe_positive')
+            train_neg = os.path.join(self.prototype, 'mmode_retrieval/train/negative')
+            train_pos = os.path.join(self.prototype, 'mmode_retrieval/train/positive')
             self.train_mmode_neg = train_neg
             self.train_mmode_pos = train_pos
 
@@ -482,7 +889,7 @@ class DataAugmentation(object):
 def main():
     import os
     '''
-    info = InformationRetreival()
+    info = InformationRetrieval()
     ref = os.path.join(info.prototype, 'APD_PIG_Master_Data_Sheet.xlsx')
     sheet = info.get_sheet(ref)
 
@@ -497,15 +904,22 @@ def main():
     info.print_stats(sheet)
     info.partition_and_store(sheet, 'bmode')
     info.partition_and_store(sheet, 'mmode')
+    '''
 
-    process = PreProcess()
-    print(process.directory)
+    process = Preprocessing()
+    #process.set_path_home(info.prototype)
+    #process.set_mode('mmode')
+    process.clean_images()
+
+
+
+
     '''
     daugment = DataAugmentation()
     #daugment.affine_transform_bmode('bmode')
     #daugment.affine_transform_mmode('mmode')
     # 80% train / 20% validation
     daugment.train_val_split('mmode', 0.8)
-
+    '''
 if __name__ == '__main__':
     main()
