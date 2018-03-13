@@ -1,18 +1,15 @@
-# Python 3.5.2 Anaconda
+# Requires (Anaconda) Python 2.7.12 for Data Augmentation "multiprocessing" package
 
-import numpy as np
-from os.path import join
-
-
-class InformationRetrieval(object):
+class InformationRetreival(object):
     def __init__(self):
         import os
         from os.path import expanduser
 
-        self.home = expanduser('~')
-        self.prototype = os.path.join(self.home, 'Documents/Develop/prototype')
+        self.home = os.path.join(expanduser('~'), 'Documents/Develop')
+        self.prototype = os.path.join(self.home, 'prototype')
 
-    def extract_frames(self, sheet, video_dir, output_frames):
+    @staticmethod
+    def extract_frames(sheet, video_dir, output_frames):
         import cv2, os, skvideo.io
 
         num_neg, num_pos = 0, 0
@@ -74,7 +71,8 @@ class InformationRetrieval(object):
         print("num_neg = " + str(num_neg))
         print("num_pos = " + str(num_pos))
 
-    def get_sheet(self, ref):
+    @staticmethod
+    def get_sheet(ref):
         import xlrd
 
         workbook = xlrd.open_workbook(ref)
@@ -82,40 +80,58 @@ class InformationRetrieval(object):
 
         return sheet
 
-    def print_stats(self, sheet):
+    @staticmethod
+    def print_stats(sheet, type):
         count, count_neg, count_pos = 0, 0, 0
 
-        for i in range(413, 846):  # m-mode images range(1, 414) / b-mode images range(413, 846)
-            # Value of ith row and 2nd column
-            diag = str(sheet.cell(i, 7).value)
-            if len(diag) > 0 and (diag != 'INDET'):
-                if diag == 'NEG':
-                    count_neg += 1
-                elif diag == 'POS':
-                    count_pos += 1
-                else:
-                    pass
-                count += 1
+        if type == 'bmode':
+            for i in range(414, 846):  # b-mode images range(414, 846)
+                # Value of ith row and 2nd column
+                diag = str(sheet.cell(i, 7).value)
+                if str(sheet.cell(i, 8).value).strip() != '0':
+                    if diag == 'NEG':
+                        count_neg += 1
+                    elif diag == 'POS':
+                        count_pos += 1
+                    else:
+                        pass
+                    count += 1
 
-        print('Total number of b-mode videos = ' + str(count))
-        print('Number of negative pathology videos = ' + str(count_neg))
-        print('Number of positive pathology videos = ' + str(count_pos))
+            print('Total number of b-mode videos = ' + str(count))
+            print('Number of negative pathology videos = ' + str(count_neg))
+            print('Number of positive pathology videos = ' + str(count_pos))
+        else:
+            for i in range(2, 413):  # m-mode images range(1, 414)
+                # Value of ith row and 2nd column
+                diag = str(sheet.cell(i, 7).value)
+                if str(sheet.cell(i, 8).value).strip() != '0':
+                    if diag == 'NEG':
+                        count_neg += 1
+                    elif diag == 'POS':
+                        count_pos += 1
+                    else:
+                        pass
+                    count += 1
+
+            print('Total number of m-mode images = ', count)
+            print('Number of negative pathology images = ', count_neg)
+            print('Number of positive pathology images = ', count_pos)
 
     def get_directories(self, type):
         import os
 
         if type == 'bmode':
             source_dir = os.path.join(self.prototype, 'bmode_frames')
-            test_oneg = os.path.join(self.prototype, 'bmode_retrieval/test/negative')
-            test_opos = os.path.join(self.prototype, 'bmode_retrieval/test/positive')
-            train_oneg = os.path.join(self.prototype, 'bmode_retrieval/train/negative')
-            train_opos = os.path.join(self.prototype, 'bmode_retrieval/train/positive')
+            test_oneg = os.path.join(self.prototype, 'bmode_retreival/test/negative')
+            test_opos = os.path.join(self.prototype, 'bmode_retreival/test/positive')
+            train_oneg = os.path.join(self.prototype, 'bmode_retreival/train/negative')
+            train_opos = os.path.join(self.prototype, 'bmode_retreival/train/positive')
         else:
             source_dir = os.path.join(self.prototype, 'mmode_images')
-            test_oneg = os.path.join(self.prototype, 'mmode_retrieval/test/negative')
-            test_opos = os.path.join(self.prototype, 'mmode_retrieval/test/positive')
-            train_oneg = os.path.join(self.prototype, 'mmode_retrieval/train/negative')
-            train_opos = os.path.join(self.prototype, 'mmode_retrieval/train/positive')
+            test_oneg = os.path.join(self.prototype, 'mmode_retreival/test/negative')
+            test_opos = os.path.join(self.prototype, 'mmode_retreival/test/positive')
+            train_oneg = os.path.join(self.prototype, 'mmode_retreival/train/negative')
+            train_opos = os.path.join(self.prototype, 'mmode_retreival/train/positive')
 
         # Recursively create directories if they don't exist
         if not os.path.isdir(test_oneg):
@@ -148,25 +164,31 @@ class InformationRetrieval(object):
         # train: 52(-) + 116(+) = 168 = 209 x 80%
         # total:                = 209
 
+        # 3/10/2018 Information Retrieval Statistics (M-Mode)
+        # 209 bmp + x 195 jpg = 404 images
+        # test:  41(-) +  40(+) =  81 = 404 x 20%
+        # train: 90(-) + 233(+) = 323 = 404 x 80%
+        # total:                = 404
+
         source_dir, test_oneg, test_opos, train_oneg, train_opos = self.get_directories(type)
 
         if type == 'bmode':
-            start, end = 413, 846
+            start, end = 414, 846
             TEST_NEG, TEST_POS, TRAIN_NEG, TRAIN_POS = 29, 52, 120, 203
         else:
-            start, end = 1, 414
-            TEST_NEG, TEST_POS, TRAIN_NEG, TRAIN_POS = 21, 20, 52, 116
+            start, end = 2, 413
+            TEST_NEG, TEST_POS, TRAIN_NEG, TRAIN_POS = 41, 40, 90, 233
 
         for i in range(start, end):  # m-mode images range(1, 414) / b-mode images range(413, 846)
             # Value of ith row and 2nd column
             if type == 'bmode':
                 fname = "IMG" + str(int(sheet.cell(i, 1).value)) + "_*" + ".jpg"
             else:
-                fname = "IMG" + str(int(sheet.cell(i, 1).value)) + ".bmp"
+                fname = "IMG" + str(int(sheet.cell(i, 1).value)) + ".*"
 
             fpath = os.path.join(source_dir, fname)
             diag = str(sheet.cell(i, 7).value)
-            if len(diag) > 0 and (diag != 'INDET'):
+            if str(sheet.cell(i, 8).value).strip() != '0':
                 if diag == 'NEG' and test_cneg < TEST_NEG:
                     for file in glob.glob(fpath):
                         head, tail = os.path.split(file)
@@ -187,13 +209,13 @@ class InformationRetrieval(object):
                         head, tail = os.path.split(file)
                         outpath = os.path.join(train_oneg, tail)
                         copyfile(file, outpath)
-                    train_cneg += 1
+                        train_cneg += 1
                 elif diag == 'POS' and train_cpos < TRAIN_POS:
                     for file in glob.glob(fpath):
                         head, tail = os.path.split(file)
                         outpath = os.path.join(train_opos, tail)
                         copyfile(file, outpath)
-                    train_cpos += 1
+                        train_cpos += 1
                 else:
                     pass
 
@@ -205,20 +227,25 @@ class InformationRetrieval(object):
         print('count = ' + str(count))
         test_count = int(round(count * 0.2))  # Floor division by default
         print('test set = ' + str(test_count) + ' images')  # Floor division by default
-        pos_count = test_count / 2  # Floor division by default
-        print('test set positive = ' + str(pos_count) + ' images')  # Floor division by default
-        print('test set negative = ' + str(test_count - pos_count) + ' images')  # Floor division by default
+        #pos_count = test_count / 2  # Floor division by default
+        #print('test set positive = ' + str(pos_count) + ' images')  # Floor division by default
+        #print('test set negative = ' + str(test_count - pos_count) + ' images')  # Floor division by default
 
         train_count = int(round(count * 0.8))  # Floor division by default
         print('train set = ' + str(train_count) + ' images')  # Floor division by default
-        pos_count = train_count / 2  # Floor division by default
-        print('train set positive = ' + str(pos_count) + ' images')  # Floor division by default
-        print('train set negative = ' + str(train_count - pos_count) + ' images')  # Floor division by default
+        #pos_count = train_count / 2  # Floor division by default
+        #print('train set positive = ' + str(pos_count) + ' images')  # Floor division by default
+        #print('train set negative = ' + str(train_count - pos_count) + ' images')  # Floor division by default
 
+
+class PreProcess(object):
+    def __init__(self):
+        self.directory = 'Import Class Directory'
 
 class Preprocessing:
 
     def __init__(self):
+        import numpy as np
         from os import getcwd
         from os.path import join
 
@@ -623,7 +650,6 @@ class Preprocessing:
 
         print('time:', end_time - st_time)
 
-
 class DataAugmentation(object):
     def __init__(self):
         import os
@@ -633,7 +659,8 @@ class DataAugmentation(object):
         self.prototype = os.path.join(self.home, 'Documents/Develop/prototype')
         self.fname = os.path.join(self.home, 'PycharmProjects/DataAugmentation/data_augment.py')
 
-    def clahe(self, source, dest):
+    @staticmethod
+    def clahe(source, dest):
         import cv2, os
 
         for subdir, dirs, files in os.walk(source):
@@ -664,15 +691,15 @@ class DataAugmentation(object):
             train_dest_pos = os.path.join(self.prototype, 'model/bmode/train/positive')
             val_dest_neg = os.path.join(self.prototype, 'model/bmode/val/negative')
             val_dest_pos = os.path.join(self.prototype, 'model/bmode/val/positive')
-            source_neg = os.path.join(self.prototype, 'bmode_retrieval/train/negative')
-            source_pos = os.path.join(self.prototype, 'bmode_retrieval/train/positive')
+            source_neg = os.path.join(self.prototype, 'bmode_retreival/train/negative')
+            source_pos = os.path.join(self.prototype, 'bmode_retreival/train/positive')
         else:
             train_dest_neg = os.path.join(self.prototype, 'model/mmode/train/negative')
             train_dest_pos = os.path.join(self.prototype, 'model/mmode/train/positive')
             val_dest_neg = os.path.join(self.prototype, 'model/mmode/val/negative')
             val_dest_pos = os.path.join(self.prototype, 'model/mmode/val/positive')
-            source_neg = os.path.join(self.prototype, 'mmode_retrieval/train/negative')
-            source_pos = os.path.join(self.prototype, 'mmode_retrieval/train/positive')
+            source_neg = os.path.join(self.prototype, 'mmode_retreival/train/negative')
+            source_pos = os.path.join(self.prototype, 'mmode_retreival/train/positive')
 
         # Recursively create destination directories if they don't exist
         if not os.path.isdir(train_dest_neg):
@@ -685,13 +712,14 @@ class DataAugmentation(object):
             os.makedirs(val_dest_pos)
 
         tcount = 0
+        # Negative Cases
         if type == 'mmode':
-            sfiles = glob.glob(os.path.join(source_neg, '*.png'))
+            sfiles = glob.glob(os.path.join(source_neg, '*.*'))
         else:
             sfiles = glob.glob(os.path.join(source_neg, '*.mp4'))
 
         tsplit = round(percent * len(sfiles))
-        print('tsplit = ', tsplit, '; length of sfiles = ', len(sfiles))
+        #print('tsplit negative = ', tsplit, '; length of sfiles = ', len(sfiles))
         for fn in sfiles:
             fn = os.path.basename(fn)
             sfile = os.path.join(source_neg, fn)
@@ -701,18 +729,21 @@ class DataAugmentation(object):
                 #print('sfile = ', sfile, '; dfile = ', dfile)
                 copyfile(sfile, dfile)
                 tcount += 1
-                print('tcount = ', tcount, '; tsplit = ', tsplit)
+                #print('tcount = ', tcount, '; tsplit = ', tsplit)
             else:
                 dfile = os.path.join(val_dest_neg, fn)
                 copyfile(sfile, dfile)
+        #print 'train negative number = ', tcount
 
         tcount = 0
+        # Positive Cases
         if type == 'mmode':
-            sfiles = glob.glob(os.path.join(source_pos, '*.png'))
+            sfiles = glob.glob(os.path.join(source_pos, '*.*'))
         else:
             sfiles = glob.glob(os.path.join(source_pos, '*.mp4'))
 
         tsplit = round(percent * len(sfiles))
+        #print('tsplit positive = ', tsplit, '; length of sfiles = ', len(sfiles))
         for fn in sfiles:
             fn = os.path.basename(fn)
             sfile = os.path.join(source_pos, fn)
@@ -723,25 +754,21 @@ class DataAugmentation(object):
             else:
                 dfile = os.path.join(val_dest_pos, fn)
                 copyfile(sfile, dfile)
+        #print 'train positive number = ', tcount
 
     def put_directories(self, type):
         import os
 
         if type == 'bmode':
-            clahe_neg = os.path.join(self.prototype, 'bmode_retrieval/clahe_negative')
-            clahe_pos = os.path.join(self.prototype, 'bmode_retrieval/clahe_positive')
-            train_neg = os.path.join(self.prototype, 'bmode_retrieval/train/negative')
-            train_pos = os.path.join(self.prototype, 'bmode_retrieval/train/positive')
-            self.train_bmode_neg = train_neg
-            self.train_bmode_pos = train_pos
-
+            clahe_neg = os.path.join(self.prototype, 'bmode_retreival/clahe_negative')
+            clahe_pos = os.path.join(self.prototype, 'bmode_retreival/clahe_positive')
+            train_neg = os.path.join(self.prototype, 'bmode_retreival/train/negative')
+            train_pos = os.path.join(self.prototype, 'bmode_retreival/train/positive')
         else:
-            clahe_neg = os.path.join(self.prototype, 'mmode_retrieval/clahe_negative')
-            clahe_pos = os.path.join(self.prototype, 'mmode_retrieval/clahe_positive')
-            train_neg = os.path.join(self.prototype, 'mmode_retrieval/train/negative')
-            train_pos = os.path.join(self.prototype, 'mmode_retrieval/train/positive')
-            self.train_mmode_neg = train_neg
-            self.train_mmode_pos = train_pos
+            clahe_neg = os.path.join(self.prototype, 'mmode_retreival/clahe_negative')
+            clahe_pos = os.path.join(self.prototype, 'mmode_retreival/clahe_positive')
+            train_neg = os.path.join(self.prototype, 'mmode_retreival/train/negative')
+            train_pos = os.path.join(self.prototype, 'mmode_retreival/train/positive')
 
         # Recursively create directories if they don't exist
         if not os.path.isdir(clahe_neg):
@@ -808,6 +835,8 @@ class DataAugmentation(object):
         # Remove clahe_negative & clahe_positive
 
     def affine_transform_mmode(self, type):
+        # 1/13/2018 Information Retrieval Statistics (M-Mode)
+        # 209 images
         # test:  21(-) +  20(+) =  41 = 209 x 20%
         # train: 52(-) + 116(+) = 168 = 209 x 80%
         # total:                = 209
@@ -817,7 +846,19 @@ class DataAugmentation(object):
         #  52(-) +  52(-) + 16x52(-) = 936(-) images
         # 116(+) + 116(+) + 6x116(+) = 928(+) images
 
-        from shutil import copyfile
+
+        # 3/10/2018 Information Retrieval Statistics (M-Mode)
+        # 209 bmp + x 195 jpg = 404 images
+        # test:  41(-) +  40(+) =  81 = 404 x 20%
+        # train: 90(-) + 233(+) = 323 = 404 x 80%
+        # total:                = 404
+
+        # Clahe plus data augmentation
+        # original + clahe + kxnumber
+        #  90(-) +  90(-) + 11x90(-) = 1170(-) images
+        # 233(+) + 233(+) + 3x233(+) = 1165(+) images
+
+        from shutil import copyfile, rmtree
         import os, shlex, subprocess
 
         clahe_neg, clahe_pos, train_neg, train_pos = self.put_directories(type)
@@ -833,7 +874,7 @@ class DataAugmentation(object):
 
         self.clahe(train_neg, clahe_neg)
 
-        prefix = '/usr/bin/python3.5 ' + self.fname + ' ' + train_neg + ' '
+        prefix = '/usr/bin/python2.7 ' + self.fname + ' ' + train_neg + ' '
         cmd1 = prefix + 'fliph'
         cmd2 = prefix + 'noise_0.01,trans_20_10'
         cmd3 = prefix + 'noise_0.02,fliph'
@@ -845,16 +886,18 @@ class DataAugmentation(object):
         cmd9 = prefix + 'blur_0.5'
         cmd10 = prefix + 'blur_1.5,trans_20_10'
         cmd11 = prefix + 'noise_0.04,trans_-10_0'
+        '''
         cmd12 = prefix + 'rot_90,blur_0.75'
         cmd13 = prefix + 'noise_0.01,rot_-90'
         cmd14 = prefix + 'noise_0.01,blur_0.50'
         cmd15 = prefix + 'flipv,trans_20_10'
         cmd16 = prefix + 'fliph,flipv'
+        '''
 
         cmd_list = [cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7, cmd8,
-                    cmd9, cmd10, cmd11, cmd12, cmd13, cmd14, cmd15, cmd16]
+                    cmd9, cmd10, cmd11]
 
-        for i in range(1, 17):
+        for i in range(1, 12):
             print('i = ', i, ' cmd = ', cmd_list[i - 1])
             subprocess.call(shlex.split(cmd_list[i - 1]))
 
@@ -864,15 +907,26 @@ class DataAugmentation(object):
         cmd1 = prefix + 'noise_0.01,blur_0.50'
         cmd2 = prefix + 'noise_0.01,trans_20_10'
         cmd3 = prefix + 'noise_0.02,fliph'
+        '''
         cmd4 = prefix + 'rot_-45,blur_1.0'
         cmd5 = prefix + 'noise_0.03,flipv'
         cmd6 = prefix + 'fliph,trans_-10_0'
+        '''
 
-        cmd_list = [cmd1, cmd2, cmd3, cmd4, cmd5, cmd6]
+        cmd_list = [cmd1, cmd2, cmd3]
 
-        for i in range(1, 7):
+        for i in range(1, 4):
             print('i = ' + str(i) + ' cmd = ' + cmd_list[i - 1])
             subprocess.call(shlex.split(cmd_list[i - 1]))
+
+        # Copy clahe images to train_neg directory
+        source, dpath = clahe_neg, train_neg
+        for subdir, dirs, files in os.walk(source):
+            for file in files:
+                # -----Reading the image-----------------------------------------------------
+                sfile = os.path.join(subdir, file)
+                dfile = os.path.join(dpath, file)
+                copyfile(sfile, dfile)
 
         # Copy clahe images to train_pos directory
         source, dpath = clahe_pos, train_pos
@@ -884,13 +938,18 @@ class DataAugmentation(object):
                 copyfile(sfile, dfile)
 
         # Remove clahe_negative & clahe_positive
+        rmtree(clahe_neg)
+        rmtree(clahe_pos)
                 
 
 def main():
-    import os
+    process = Preprocessing
+
     '''
-    info = InformationRetrieval()
-    ref = os.path.join(info.prototype, 'APD_PIG_Master_Data_Sheet.xlsx')
+    import os
+
+    info = InformationRetreival()
+    ref = os.path.join(info.home, 'APD_PIG_Master_Data_Sheet.xlsx')
     sheet = info.get_sheet(ref)
 
     bmode_video = os.path.join(info.prototype, 'bmode_video')
@@ -900,26 +959,21 @@ def main():
         os.makedirs(bmode_frames)
 
     info.extract_frames(sheet, bmode_video, bmode_frames)
-
-    info.print_stats(sheet)
+    info.print_stats(sheet, 'bmode')
     info.partition_and_store(sheet, 'bmode')
+
+    info.print_stats(sheet, 'mmode')
     info.partition_and_store(sheet, 'mmode')
-    '''
 
-    process = Preprocessing()
-    #process.set_path_home(info.prototype)
-    #process.set_mode('mmode')
-    process.clean_images()
+    process = PreProcess()
+    print(process.directory)
 
-
-
-
-    '''
     daugment = DataAugmentation()
-    #daugment.affine_transform_bmode('bmode')
-    #daugment.affine_transform_mmode('mmode')
+    daugment.affine_transform_bmode('bmode')
+    daugment.affine_transform_mmode('mmode')
     # 80% train / 20% validation
     daugment.train_val_split('mmode', 0.8)
     '''
+
 if __name__ == '__main__':
     main()
