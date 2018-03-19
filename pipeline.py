@@ -417,15 +417,17 @@ class Preprocess:
         idx = np.where(img > 0)
 
         mask = img > 0
-        pix_per_col = np.sum(mask, axis=0)
 
-        n_pix_thr = np.floor(mask.shape[1] / 6)
+        if self.Mode == 'mmode':
+            pix_per_col = np.sum(mask, axis=0)
 
-        ln_cols = np.where(pix_per_col < n_pix_thr)
-        ln_cols = ln_cols[0]
+            n_pix_thr = np.floor(mask.shape[1] / 6)
 
-        for l in ln_cols:
-            mask[:, l] = 0
+            ln_cols = np.where(pix_per_col < n_pix_thr)
+            ln_cols = ln_cols[0]
+
+            for l in ln_cols:
+                mask[:, l] = 0
 
         lb_img = measure.label(mask, neighbors=4)
         prps = measure.regionprops(lb_img)
@@ -681,7 +683,7 @@ class Preprocess:
         list_imgs = listdir(img_dir)
         for name_img in list_imgs:
             if img_idx < n_imgs:
-                if '.bmp' not in name_img and '.jpg' not in name_img:
+                if '.bmp' not in name_img and '.jpg' not in name_img and '.png' not in name_img:
                     print(name_img)
                     continue
 
@@ -995,8 +997,9 @@ class DataAugmentation(object):
 
 def main():
     dir = '/home/rlee/Documents/pneumothorax/'
-    save_path = '/home/rlee/Documents/pneumothorax/processed_03162018/'
+    save_path = '/home/rlee/Documents/pneumothorax/processed_bmode'
     process = Preprocess()
+    process.set_mode('bmode')
     process.clean_images(dir, save_path)
 
     '''
