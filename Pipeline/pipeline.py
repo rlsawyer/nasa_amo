@@ -1,4 +1,5 @@
-# Requires (Anaconda) Python 2.7.12 for Data Augmentation "multiprocessing" package
+# Requires Python 2.7.x for Data Augmentation "multiprocessing" package system call
+# Remainder of source has been interpreted and tested with Python 3.5.2 on Ubuntu Linux 16.04
 
 import glob
 import os
@@ -21,8 +22,10 @@ from skimage import morphology, exposure, measure, filters, feature
 class InformationRetreival(object):
     def __init__(self):
 
-        self.home = os.path.join(expanduser('~'), 'Documents/Develop')
-        self.prototype = os.path.join(self.home, 'prototype')
+        self.base = os.path.join(expanduser('~'), 'Documents')
+        self.ptx = os.path.join(self.base, 'Pneumothorax')
+        self.processedBmode = ''
+        self.processedMmode = ''
 
     @staticmethod
     def extract_frames(sheet, video_dir, output_frames):
@@ -134,17 +137,17 @@ class InformationRetreival(object):
     def get_directories(self, type):
 
         if type == 'bmode':
-            source_dir = os.path.join(self.prototype, 'bmode_frames')
-            test_oneg = os.path.join(self.prototype, 'bmode_retreival/test/negative')
-            test_opos = os.path.join(self.prototype, 'bmode_retreival/test/positive')
-            train_oneg = os.path.join(self.prototype, 'bmode_retreival/train/negative')
-            train_opos = os.path.join(self.prototype, 'bmode_retreival/train/positive')
+            source_dir = os.path.join(self.ptx, 'bmode_frames')
+            test_oneg = os.path.join(self.ptx, 'bmode_retreival/test/negative')
+            test_opos = os.path.join(self.ptx, 'bmode_retreival/test/positive')
+            train_oneg = os.path.join(self.ptx, 'bmode_retreival/train/negative')
+            train_opos = os.path.join(self.ptx, 'bmode_retreival/train/positive')
         else:
-            source_dir = os.path.join(self.prototype, 'mmode_images')
-            test_oneg = os.path.join(self.prototype, 'mmode_retreival/test/negative')
-            test_opos = os.path.join(self.prototype, 'mmode_retreival/test/positive')
-            train_oneg = os.path.join(self.prototype, 'mmode_retreival/train/negative')
-            train_opos = os.path.join(self.prototype, 'mmode_retreival/train/positive')
+            source_dir = self.processedMmode
+            test_oneg = os.path.join(self.ptx, 'mmode_retreival/test/negative')
+            test_opos = os.path.join(self.ptx, 'mmode_retreival/test/positive')
+            train_oneg = os.path.join(self.ptx, 'mmode_retreival/train/negative')
+            train_opos = os.path.join(self.ptx, 'mmode_retreival/train/positive')
 
         # Recursively create directories if they don't exist
         if not os.path.isdir(test_oneg):
@@ -493,7 +496,7 @@ class Preprocess:
         prps = measure.regionprops(lb_img)
 
         # Threshold used to get rid of extraneous spots/short lines
-        thresh = img.shape[0] * img.shape[1] / 5000
+        thresh = img.shape[0] * img.shape[1] / 2000
         for p in prps:
             cds = np.transpose(p.coords)
             # If any of the object is outside the designated region, remove it from the labeled image.
@@ -739,16 +742,12 @@ class Preprocess:
                 imageio.imwrite(crpd_final_img[0:len(crpd_final_img) - 4] + '.png', self.CleanedImage)
                 img_idx += 1
 
-        end_time = time.clock()
-
-        print('Pre-processing time:', end_time - st_time)
-
 
 class DataAugmentation(object):
     def __init__(self):
 
         self.home = expanduser('~')
-        self.prototype = os.path.join(self.home, 'Documents/Develop/prototype')
+        self.ptx = os.path.join(self.home, 'Documents/Pneumothorax')
         self.fname = os.path.join(self.home, 'PycharmProjects/DataAugmentation/data_augment.py')
 
     @staticmethod
@@ -776,19 +775,19 @@ class DataAugmentation(object):
     def train_val_split(self, type, percent):
 
         if type == 'bmode':
-            train_dest_neg = os.path.join(self.prototype, 'model/bmode/train/negative')
-            train_dest_pos = os.path.join(self.prototype, 'model/bmode/train/positive')
-            val_dest_neg = os.path.join(self.prototype, 'model/bmode/val/negative')
-            val_dest_pos = os.path.join(self.prototype, 'model/bmode/val/positive')
-            source_neg = os.path.join(self.prototype, 'bmode_retreival/train/negative')
-            source_pos = os.path.join(self.prototype, 'bmode_retreival/train/positive')
+            train_dest_neg = os.path.join(self.ptx, 'model/bmode/train/negative')
+            train_dest_pos = os.path.join(self.ptx, 'model/bmode/train/positive')
+            val_dest_neg = os.path.join(self.ptx, 'model/bmode/val/negative')
+            val_dest_pos = os.path.join(self.ptx, 'model/bmode/val/positive')
+            source_neg = os.path.join(self.ptx, 'bmode_retreival/train/negative')
+            source_pos = os.path.join(self.ptx, 'bmode_retreival/train/positive')
         else:
-            train_dest_neg = os.path.join(self.prototype, 'model/mmode/train/negative')
-            train_dest_pos = os.path.join(self.prototype, 'model/mmode/train/positive')
-            val_dest_neg = os.path.join(self.prototype, 'model/mmode/val/negative')
-            val_dest_pos = os.path.join(self.prototype, 'model/mmode/val/positive')
-            source_neg = os.path.join(self.prototype, 'mmode_retreival/train/negative')
-            source_pos = os.path.join(self.prototype, 'mmode_retreival/train/positive')
+            train_dest_neg = os.path.join(self.ptx, 'model/mmode/train/negative')
+            train_dest_pos = os.path.join(self.ptx, 'model/mmode/train/positive')
+            val_dest_neg = os.path.join(self.ptx, 'model/mmode/val/negative')
+            val_dest_pos = os.path.join(self.ptx, 'model/mmode/val/positive')
+            source_neg = os.path.join(self.ptx, 'mmode_retreival/train/negative')
+            source_pos = os.path.join(self.ptx, 'mmode_retreival/train/positive')
 
         # Recursively create destination directories if they don't exist
         if not os.path.isdir(train_dest_neg):
@@ -848,15 +847,15 @@ class DataAugmentation(object):
     def put_directories(self, type):
 
         if type == 'bmode':
-            clahe_neg = os.path.join(self.prototype, 'bmode_retreival/clahe_negative')
-            clahe_pos = os.path.join(self.prototype, 'bmode_retreival/clahe_positive')
-            train_neg = os.path.join(self.prototype, 'bmode_retreival/train/negative')
-            train_pos = os.path.join(self.prototype, 'bmode_retreival/train/positive')
+            clahe_neg = os.path.join(self.ptx, 'bmode_retreival/clahe_negative')
+            clahe_pos = os.path.join(self.ptx, 'bmode_retreival/clahe_positive')
+            train_neg = os.path.join(self.ptx, 'bmode_retreival/train/negative')
+            train_pos = os.path.join(self.ptx, 'bmode_retreival/train/positive')
         else:
-            clahe_neg = os.path.join(self.prototype, 'mmode_retreival/clahe_negative')
-            clahe_pos = os.path.join(self.prototype, 'mmode_retreival/clahe_positive')
-            train_neg = os.path.join(self.prototype, 'mmode_retreival/train/negative')
-            train_pos = os.path.join(self.prototype, 'mmode_retreival/train/positive')
+            clahe_neg = os.path.join(self.ptx, 'mmode_retreival/clahe_negative')
+            clahe_pos = os.path.join(self.ptx, 'mmode_retreival/clahe_positive')
+            train_neg = os.path.join(self.ptx, 'mmode_retreival/train/negative')
+            train_pos = os.path.join(self.ptx, 'mmode_retreival/train/positive')
 
         # Recursively create directories if they don't exist
         if not os.path.isdir(clahe_neg):
@@ -1025,40 +1024,39 @@ class DataAugmentation(object):
 
 
 def main():
-    dir = '/home/rlee/Documents/pneumothorax/'
-    save_path = '/home/rlee/Documents/pneumothorax/processed_bmode'
-    process = Preprocess()
-    process.set_mode('bmode')
-    process.clean_images(dir, save_path)
-
-    '''
     info = InformationRetreival()
-    ref = os.path.join(info.home, 'APD_PIG_Master_Data_Sheet.xlsx')
+    process = Preprocess()
+    daugment = DataAugmentation()
+
+    ref = os.path.join(info.base, 'APD_PIG_Master_Data_Sheet.xlsx')
     sheet = info.get_sheet(ref)
 
-    bmode_video = os.path.join(info.prototype, 'bmode_video')
-    bmode_frames = os.path.join(info.prototype, 'bmode_frames')
+    '''
+    info.processedMmode = os.path.join(info.ptx, 'processed_mmode')
 
-    if not os.path.isdir(bmode_frames):
-        os.makedirs(bmode_frames)
-
-    info.extract_frames(sheet, bmode_video, bmode_frames)
-    info.print_stats(sheet, 'bmode')
-    info.partition_and_store(sheet, 'bmode')
-
+    process.set_mode('mmode')
+    process.clean_images(info.ptx, info.processedMmode)
     info.print_stats(sheet, 'mmode')
     info.partition_and_store(sheet, 'mmode')
-
-    process = PreProcess()
-    print(process.directory)
-
-    daugment = DataAugmentation()
-    daugment.affine_transform_bmode('bmode')
     daugment.affine_transform_mmode('mmode')
     # 80% train / 20% validation
     daugment.train_val_split('mmode', 0.8)
     '''
 
+    info.processedBmode = os.path.join(info.ptx, 'processed_bmode')
+
+    bmode_video = os.path.join(info.ptx, 'bmode_video')
+    bmode_images = os.path.join(info.ptx, 'bmode_images')
+    if not os.path.isdir(bmode_images):
+        os.makedirs(bmode_images)
+    process.set_mode('bmode')
+    process.clean_images(info.ptx, info.processedBmode)
+    info.extract_frames(sheet, bmode_video, bmode_images)
+    info.print_stats(sheet, 'bmode')
+    info.partition_and_store(sheet, 'bmode')
+    daugment.affine_transform_bmode('bmode')
+    # 80% train / 20% validation
+    daugment.train_val_split('bmode', 0.8)
 
 if __name__ == '__main__':
     main()
