@@ -280,8 +280,10 @@ class Preprocess:
 
         hist, bins = exposure.histogram(equ, 256)
         h_thresh_idx = np.argmax(hist)
-        if self.FileExt == '.jpg':
+        if self.FileExt == '.jpg' and self.Mode == 'mmode':
             h_thresh_idx += 4
+        elif self.Mode == 'bmode':
+            h_thresh_idx += 0
         else:
             h_thresh_idx += 2
 
@@ -308,6 +310,9 @@ class Preprocess:
             if thr_ok:
                 thr_bad = False
 
+        if self.Mode == 'bmode':
+            bw = morphology.binary_closing(bw, morphology.square(15))
+
         # Label the distinct objects in the thresholded image
         lb_img = measure.label(bw, neighbors=4)
 
@@ -332,23 +337,25 @@ class Preprocess:
             bw = morphology.binary_closing(bw, morphology.square(7))
 
         bw = morphology.remove_small_holes(bw, 500)
-        lb_img = measure.label(bw, neighbors=4)
-        prps = measure.regionprops(lb_img)
-        m_prp = []
-        m_val = 0
-        for p in prps:
-            if p.area > m_val:
-                m_prp = p
-                m_val = p.area
 
-        cds = np.transpose(m_prp.coords)
-        min_r = np.min(cds[0])
-        idx = np.where(bw > 0)
-        max_r = np.max(idx[0])
-        min_c = np.min(cds[1])
-        max_c = np.max(cds[1])
+        if self.Mode == 'mmode':
+            lb_img = measure.label(bw, neighbors=4)
+            prps = measure.regionprops(lb_img)
+            m_prp = []
+            m_val = 0
+            for p in prps:
+                if p.area > m_val:
+                    m_prp = p
+                    m_val = p.area
 
-        bw[min_r:max_r, min_c:max_c] = 1
+            cds = np.transpose(m_prp.coords)
+            min_r = np.min(cds[0])
+            idx = np.where(bw > 0)
+            max_r = np.max(idx[0])
+            min_c = np.min(cds[1])
+            max_c = np.max(cds[1])
+
+            bw[min_r:max_r, min_c:max_c] = 1
 
         idxs = np.where(bw > 0)
 
@@ -414,18 +421,25 @@ class Preprocess:
         img = self.CleanedImage
         img -= np.min(img)
         img /= np.max(img)
-        idx = np.where(img > 0)
 
         mask = img > 0
         pix_per_col = np.sum(mask, axis=0)
 
-        n_pix_thr = np.floor(mask.shape[1] / 6)
+        if self.Mode == 'mmode':
+            n_pix_thr = np.floor(mask.shape[0] / 6)
+        else:
+            n_rows = np.sum(mask[0:50, :], axis=1)
+            ns_rows = np.where(n_rows < 0.4 * mask.shape[1])
+            mask[0:np.max(ns_rows), :] = False
+            n_pix_thr = np.floor(mask.shape[0] / 10)
 
         ln_cols = np.where(pix_per_col < n_pix_thr)
         ln_cols = ln_cols[0]
 
         for l in ln_cols:
-            mask[:, l] = 0
+            mask[:, l] = False
+
+        idx = np.where(mask)
 
         lb_img = measure.label(mask, neighbors=4)
         prps = measure.regionprops(lb_img)
@@ -440,7 +454,7 @@ class Preprocess:
 
         cds = np.transpose(prps[mx_idx].coords)
 
-        min_c = np.min(cds[1])
+        min_c = np.min(cds[1]) + 1
         max_c = np.max(cds[1])
         min_r = np.min(idx[0])
         max_r = np.max(idx[0])
@@ -568,49 +582,57 @@ class Preprocess:
     def remove_text(self):
 
         cleaned_img = self.CleanedImage
-        nb_pixels = 50
-
-        def find_text(im, nb_pix):
-            lb_im = measure.label(im, neighbors=8)
-            ps = measure.regionprops(lb_im)
-
+        if self.Mode == 'mmode':
+            nb_pixels = 50
+            morph_sz = 15
             rg_area = 6
-            n_img = np.zeros((im.shape[0], im.shape[1]))
-            for p in ps:
+        else:
+            nb_pixels = 40
+            morph_sz = 15
+            rg_area = 10
+
+        def find_text(img, nb_pixels, morph_size, reg_area):
+            lb_img = measure.label(img, neighbors=8)
+            prps = measure.regionprops(lb_img)
+
+            n_img = np.zeros((img.shape[0], img.shape[1]))
+            for p in prps:
                 cds = np.transpose(p.coords)
-                if p.area > rg_area and (np.max(cds[0]) < nb_pix or np.min(cds[0]) > im.shape[0] - nb_pix) and (
-                                np.max(cds[1]) < nb_pix or np.min(cds[1]) > im.shape[1] - nb_pix):
+                if p.area > reg_area and (np.max(cds[0]) < nb_pixels or np.min(cds[0]) > img.shape[0] - nb_pixels) and (
+                        np.max(cds[1]) < nb_pixels or np.min(cds[1]) > img.shape[1] - nb_pixels):
                     n_img[cds[0], cds[1]] = 1
 
-            b_im = morphology.binary_dilation(n_img, morphology.square(15))
-            return b_im
+            b_img = morphology.binary_dilation(n_img, morphology.square(morph_size))
+            return b_img
 
-        def use_sbv(cleaned_im):
-            sbv = filters.sobel_v(cleaned_im)
+        from skimage import feature
 
-            th = filters.threshold_otsu(sbv)
-            im = sbv > th
+        def use_sbv(cleaned_img):
+            sbv = filters.sobel_v(cleaned_img)
 
-            if np.sum(im) > np.sum(~im):
-                im = sbv < th
-            im = morphology.binary_dilation(im, morphology.square(1))
+            thr = filters.threshold_yen(sbv)
 
-            return im
+            img = sbv > thr
 
-        if self.FileExt == '.jpg':
+            if np.sum(img == 1) > np.sum(img == 0):
+                img = sbv < thr
+            img = morphology.binary_dilation(img, morphology.square(1))
+
+            return img
+
+        if self.FileExt == '.jpg':  # and self.Mode == 'mmode':
             img = use_sbv(cleaned_img)
         else:
             img = feature.peak_local_max(cleaned_img, indices=False)
             if len(np.unique(img)) == 1:
-                print('not blobs')
                 img = use_sbv(cleaned_img)
 
-            if np.sum(img) > np.sum(~img):
+            if np.sum(img == 1) > np.sum(img == 0):
                 img = ~img
+            if self.Mode == 'mmode':
+                img = morphology.binary_dilation(img, morphology.square(2))
 
-            img = morphology.binary_dilation(img, morphology.square(2))
-
-        b_img = find_text(img, nb_pixels)
+        b_img = find_text(img, nb_pixels, morph_sz, rg_area)
 
         cleaned_img2 = np.copy(cleaned_img)
 
@@ -621,21 +643,21 @@ class Preprocess:
         for p in prps:
             idx = np.transpose(p.coords)
             if len(idx[0]) > 0:
-                if img.shape[1] - np.max(idx[1]) < thr:
+                if (img.shape[1] - np.max(idx[1]) < thr):
                     max_c = img.shape[1]
                 else:
                     max_c = np.max(idx[1])
                 if np.min(idx[1]) < thr:
-                    min_c = 1
+                    min_c = 0
                 else:
                     min_c = np.min(idx[1])
 
-                if img.shape[0] - np.max(idx[0]) < thr:
+                if (img.shape[0] - np.max(idx[0]) < thr):
                     max_r = img.shape[0]
                 else:
                     max_r = np.max(idx[0])
                 if np.min(idx[0]) < thr:
-                    min_r = 1
+                    min_r = 0
                 else:
                     min_r = np.min(idx[0])
 
@@ -677,13 +699,15 @@ class Preprocess:
                 else:
                     os.remove(join(save_dir, f))
 
-
         list_imgs = listdir(img_dir)
         for name_img in list_imgs:
             if img_idx < n_imgs:
-                if '.bmp' not in name_img and '.jpg' not in name_img:
+                if '.bmp' not in name_img and '.jpg' not in name_img and '.png' not in name_img:
                     print(name_img)
                     continue
+
+                if img_idx % 100 == 0:
+                    print('Image {:0d} out of {:0d}'.format(img_idx, len(list_imgs)))
 
                 path_img = join(img_dir, name_img)
                 c_img = Image.open(path_img)
@@ -696,13 +720,20 @@ class Preprocess:
                 self.GrayImage = img
 
                 self.remove_background()
-                thr_img = self.detect_lines()
-                cleaned_img = self.blend_lines_into_image(thr_img)
+                if self.Mode == 'mmode':
+                    thr_img = self.detect_lines()
+                    cleaned_img = self.blend_lines_into_image(thr_img)
+                else:
+                    cleaned_img = self.crop_image()
+
                 cleaned_img -= np.min(cleaned_img)
                 cleaned_img /= np.max(cleaned_img)
 
                 crpd_final_img = join(save_dir, name_img)
                 self.CleanedImage = cleaned_img
+
+                #if self.Mode == 'mmode':
+                #    self.remove_text()
                 self.remove_text()
 
                 imageio.imwrite(crpd_final_img[0:len(crpd_final_img) - 4] + '.png', self.CleanedImage)
@@ -995,8 +1026,9 @@ class DataAugmentation(object):
 
 def main():
     dir = '/home/rlee/Documents/pneumothorax/'
-    save_path = '/home/rlee/Documents/pneumothorax/processed_03162018/'
+    save_path = '/home/rlee/Documents/pneumothorax/processed_bmode'
     process = Preprocess()
+    process.set_mode('bmode')
     process.clean_images(dir, save_path)
 
     '''
